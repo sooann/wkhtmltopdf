@@ -544,6 +544,11 @@ def shell(cmd):
     if ret != 0:
         error("%s\ncommand failed: exit code %d" % (cmd, ret))
 
+def chroot_shell(name, cmd):
+    ret = os.system('schroot -c wkhtmltopdf-%s -- %s ' % (name, cmd))
+    if ret != 0:
+        error("command inside chroot failed: exit code %d" % ret)
+
 def get_output(*cmd):
     try:
         return subprocess.check_output(cmd, stderr=subprocess.STDOUT).strip()
@@ -743,9 +748,13 @@ def build_setup_schroot(config, basedir):
             del ARCH[ARCH.index('i386')]
 
     for arch in ARCH:
-        message('******************* %s-%s\n' % (chroot, arch))
+        alias = '%s-%s' % (chroot, arch)
+        if command_list[0][0] == 'set_alias':
+            alias = command_list[0][1]
+            del command_list[0]
+        message('******************* %s\n' % alias)
         base_dir = os.environ.get('WKHTMLTOX_CHROOT') or '/var/chroot'
-        root_dir = os.path.join(base_dir, 'wkhtmltopdf-%s-%s' % (chroot, arch))
+        root_dir = os.path.join(base_dir, alias)
         rmdir(root_dir)
         mkdir_p(root_dir)
         for command in command_list:
@@ -787,8 +796,8 @@ def build_setup_schroot(config, basedir):
                 open(loc, 'w').write(cmd % (args, cfg['--name'], chroot, cfg['-t']))
                 shell('chmod a+x %s' % loc)
             elif name == 'schroot_conf':
-                cfg = open('/etc/schroot/chroot.d/wkhtmltopdf-%s-%s' % (chroot, arch), 'w')
-                cfg.write('[wkhtmltopdf-%s-%s]\n' % (chroot, arch))
+                cfg = open('/etc/schroot/chroot.d/wkhtmltopdf-%s' % alias, 'w')
+                cfg.write('[wkhtmltopdf-%s]\n' % alias)
                 cfg.write('type=directory\ndirectory=%s/\n' % root_dir)
                 cfg.write('description=%s %s for wkhtmltopdf\n' % (command[1], arch))
                 cfg.write('users=%s\nroot-users=root\n' % login)
@@ -1235,7 +1244,7 @@ def main():
         usage()
 
     for arg in sys.argv[2:]:
-        if not arg in ['-clean', '-debug']:
+        if not arg in ['-clean', '-debug', '-chroot-build']:
             usage()
 
     final_config = config
@@ -1247,6 +1256,10 @@ def main():
         rmdir(os.path.join(basedir, config))
 
     os.chdir(rootdir)
+    if '-chroot-build' in sys.argv[2:]:
+        globals()['chroot_build_%s' % BUILDERS[config]](final_config, basedir)
+        return
+
     globals()['check_%s' % BUILDERS[config]](final_config)
     globals()['build_%s' % BUILDERS[config]](final_config, basedir)
 
